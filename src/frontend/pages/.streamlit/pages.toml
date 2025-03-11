@@ -1,0 +1,5 @@
+[pages]
+"1_backtest.py" = "策略回测"
+"2_data_view.py" = "数据查看"
+"3_history.py" = "回测记录"
+"4_quick_backtest.py" = "快速回测" 

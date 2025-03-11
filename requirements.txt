@@ -1,0 +1,6 @@
+streamlit>=1.24.0
+pymongo>=4.3.3
+pandas
+numpy
+plotly
+loguru 
