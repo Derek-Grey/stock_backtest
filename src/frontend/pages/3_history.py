@@ -60,7 +60,17 @@ def plot_result(df):
     return fig
 
 def history_page():
-    st.title("回测记录")
+    st.title("📝 回测记录")
+    
+    st.markdown(
+        """
+        <style>
+        .main-title {
+            font-size: 2rem;  /* Unified font size */
+        }
+        </style>
+        """, unsafe_allow_html=True
+    )
     
     results = load_results()
     

@@ -11,6 +11,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 from loguru import logger
+import sqlite3
+import pymongo
 
 # 添加项目根目录到系统路径
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -54,9 +56,63 @@ def validate_return_csv(df):
     
     return True, "验证通过"
 
+def get_db_connection():
+    """创建到SQLite数据库的连接。"""
+    conn = sqlite3.connect('backtest_results.db')
+    return conn
+
+def create_results_table():
+    """如果不存在，则创建用于存储回测结果的表。"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS backtest_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            total_return REAL,
+            annual_return REAL,
+            volatility REAL,
+            sharpe REAL,
+            max_drawdown REAL,
+            avg_turnover REAL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 def quick_backtest_page():
-    st.title("快速回测")
+    st.title("📈 快速回测")
     
+    st.markdown(
+        """
+        <style>
+        .main-title {
+            font-size: 2rem;  /* Unified font size */
+        }
+        </style>
+        """, unsafe_allow_html=True
+    )
+    
+    # 在 quick_backtest_page 函数中添加用户自定义选项
+    st.sidebar.header("图表设置")
+    color_option = st.sidebar.color_picker("选择图表颜色", "#1f77b4")
+
+    # CSV Template Downloads
+    st.markdown("### 下载CSV模板")
+    st.download_button(
+        label="下载权重CSV模板",
+        data="date,code,weight\n2023-01-03,SH600788,0.1\n2023-01-03,SZ000765,0.2\n",
+        file_name="weight_template.csv",
+        mime="text/csv"
+    )
+    
+    st.download_button(
+        label="下载收益率CSV模板",
+        data="date,code,return\n2023-01-03,SH600000,-0.00688\n2023-01-03,SZ000765,-0.00233\n",
+        file_name="return_template.csv",
+        mime="text/csv"
+    )
+
     # 文件上传
     col1, col2 = st.columns(2)
     with col1:
@@ -89,33 +145,41 @@ def quick_backtest_page():
             
             st.success("文件上传成功！")
             
-            # 检查数据格式
-            checker = DataChecker()
-            try:
-                checker.check_trading_dates(weight_df)
-                checker.check_trading_dates(return_df)
-            except ValueError as e:
-                st.error(f"数据验证失败: {str(e)}")
-                return
-            
-            # 执行回测
-            try:
-                with st.spinner("正在执行回测..."):
-                    portfolio_returns, turnover = calculate_portfolio_metrics(
-                        str(weight_path),
-                        str(return_path)
-                    )
-                    
-                    # 显示回测结果
-                    st.subheader("回测结果")
-                    display_metrics(portfolio_returns, turnover)
-                    fig = plot_cumulative_returns(portfolio_returns)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-            except Exception as e:
-                st.error(f"回测执行失败: {str(e)}")
-                logger.exception("回测失败详细信息:")
+            # 添加确认按钮
+            if st.button("开始回测"):
+                # 检查数据格式
+                checker = DataChecker()
+                try:
+                    checker.check_trading_dates(weight_df)
+                    checker.check_trading_dates(return_df)
+                except ValueError as e:
+                    st.error(f"数据验证失败: {str(e)}")
+                    return
+                
+                # 执行回测
+                try:
+                    with st.spinner("正在执行回测..."):
+                        portfolio_returns, turnover = calculate_portfolio_metrics(
+                            str(weight_path),
+                            str(return_path)
+                        )
+                        
+                        # 显示回测结果
+                        st.subheader("回测结果")
+                        display_metrics(portfolio_returns, turnover)
+                        
+                        # 添加收益分布直方图
+                        hist_fig = plot_return_distribution(portfolio_returns, color_option)
+                        st.plotly_chart(hist_fig, use_container_width=True)
+                        
+                        # 显示策略表现图
+                        fig = plot_cumulative_returns(portfolio_returns)
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                except Exception as e:
+                    st.error(f"回测执行失败: {str(e)}")
+                    logger.exception("回测失败详细信息:")
                 
         except Exception as e:
             st.error(f"文件处理失败: {str(e)}")
@@ -126,9 +190,8 @@ def display_metrics(returns, turnover):
     
     # 计算关键指标
     total_return = (1 + returns).prod() - 1
-    # 根据数据频率调整年化系数
     is_intraday = isinstance(returns.index[0], pd.Timestamp) and returns.index[0].hour != 0
-    annual_factor = 252 if not is_intraday else 252 * 240  # 日频使用252，分钟频使用252*240
+    annual_factor = 252 if not is_intraday else 252 * 240
     
     annual_return = (1 + total_return) ** (annual_factor / len(returns)) - 1
     volatility = returns.std() * (annual_factor ** 0.5)
@@ -148,6 +211,20 @@ def display_metrics(returns, turnover):
     with col3:
         st.metric("最大回撤", f"{max_drawdown:.2%}")
         st.metric("平均换手率", f"{avg_turnover:.2%}")
+
+    # 准备要保存到MongoDB的数据
+    result_data = {
+        "total_return": total_return,
+        "annual_return": annual_return,
+        "volatility": volatility,
+        "sharpe": sharpe,
+        "max_drawdown": max_drawdown,
+        "avg_turnover": avg_turnover,
+        "timestamp": datetime.now()
+    }
+
+    # 将结果保存到MongoDB
+    save_to_mongo(result_data, "quick_backtest_results")
 
 def plot_cumulative_returns(returns):
     """绘制累计收益率和回撤图表"""
@@ -247,5 +324,41 @@ def plot_cumulative_returns(returns):
     
     return fig
 
+def plot_return_distribution(returns, color_option):
+    """绘制收益分布的直方图"""
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x=returns,
+        nbinsx=50,
+        marker_color=color_option  # 使用用户选择的颜色
+    ))
+    
+    fig.update_layout(
+        title='收益分布',
+        xaxis_title='收益率',
+        yaxis_title='频率',
+        bargap=0.2
+    )
+    
+    return fig
+
+def save_to_mongo(data, collection_name):
+    """将结果保存到本地MongoDB数据库。"""
+    try:
+        # 连接到本地MongoDB服务器
+        client = pymongo.MongoClient("mongodb://localhost:27017/")
+        # 选择数据库
+        db = client["backtest_results"]
+        # 选择集合
+        collection = db[collection_name]
+        # 插入数据
+        collection.insert_one(data)
+        st.success(f"结果已保存到本地数据库: {collection_name}")
+    except Exception as e:
+        st.error(f"无法保存到数据库: {str(e)}")
+        logger.exception("保存到数据库失败详细信息:")
+
 if __name__ == "__main__":
+    # 在脚本开始时调用此函数以确保表已创建
+    create_results_table()
     quick_backtest_page() 

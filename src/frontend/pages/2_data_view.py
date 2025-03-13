@@ -33,6 +33,9 @@ def data_view_page():
         .stDateInput>div {
             border-radius: 8px;
         }
+        .main-title {
+            font-size: 2rem;  /* Unified font size */
+        }
         </style>
         """, unsafe_allow_html=True
     )

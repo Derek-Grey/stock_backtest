@@ -74,33 +74,50 @@ def display_metrics(results, strategy_name):
     with col3:
         st.metric("最大回撤", f"{max_drawdown:.2%}")
 
+def save_to_mongo(data, collection_name):
+    """Save results to a local MongoDB database."""
+    try:
+        client = pymongo.MongoClient("mongodb://localhost:27017/")
+        db = client["backtest_results"]
+        collection = db[collection_name]
+        collection.insert_many(data.to_dict('records'))
+        st.success(f"结果已保存到本地数据库: {collection_name}")
+    except Exception as e:
+        st.error(f"无法保存到数据库: {str(e)}")
+        logger.exception("保存到数据库失败详细信息:")
+
 def render_backtest_page():
     """渲染回测页面"""
-    st.set_page_config(page_title="策略回测系统", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="📈 参考策略回测", layout="wide", initial_sidebar_state="expanded")
+    st.title("📈 参考策略回测")
+    
+    # Custom CSS for styling
     st.markdown(
         """
         <style>
         .main-title {
-            font-size: 2.5rem;
-            color: #1f77b4;
-            text-align: center;
-            margin-bottom: 20px;
+            font-size: 2rem;
+            color: #4CAF50;  /* Example color */
         }
         .sub-title {
-            font-size: 1.5rem;
-            color: #333333;
-            text-align: center;
-            margin-bottom: 40px;
+            font-size: 1.25rem;
+            color: #555;
         }
         .icon {
             margin-right: 10px;
         }
+        .stButton>button {
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 8px;
+            padding: 10px 24px;
+            font-size: 16px;
+        }
         </style>
         """, unsafe_allow_html=True
     )
-    st.markdown('<div class="main-title"><i class="fas fa-chart-line icon"></i>策略回测系统</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">欢迎使用策略回测系统，轻松分析您的投资策略表现</div>', unsafe_allow_html=True)
-
+    
+    st.markdown('<div class="sub-title">欢迎使用策略回测，本策略是行业大佬提供的评分数据，来确定每日的持仓股票，结果仅供参考，评分矩阵可以参考数据查看模块</div>', unsafe_allow_html=True)
     st.markdown('<h2><i class="fas fa-cogs icon"></i>回测参数设置</h2>', unsafe_allow_html=True)
     
     # 日期选择
@@ -176,6 +193,9 @@ def render_backtest_page():
                 
                 fixed_results, dynamic_results = main(**params)
                 
+                # Define timestamp before using it
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
                 # 显示回测结果
                 if fixed_results is not None and run_fixed:
                     st.subheader("固定持仓策略结果")
@@ -183,16 +203,19 @@ def render_backtest_page():
                     fig = plot_cumulative_returns(fixed_results, "固定持仓")
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
-                
+                    # Save to MongoDB
+                    save_to_mongo(fixed_results, f"fixed_{timestamp}")
+
                 if dynamic_results is not None and run_dynamic:
                     st.subheader("动态持仓策略结果")
                     display_metrics(dynamic_results, "动态持仓")
                     fig = plot_cumulative_returns(dynamic_results, "动态持仓")
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
+                    # Save to MongoDB
+                    save_to_mongo(dynamic_results, f"dynamic_{timestamp}")
                 
                 # 保存回测结果
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 if fixed_results is not None:
                     save_results(fixed_results, f"fixed_{timestamp}", OUTPUT_DIR)
                 if dynamic_results is not None:
