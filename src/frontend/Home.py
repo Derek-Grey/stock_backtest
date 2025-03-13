@@ -6,19 +6,49 @@ from pathlib import Path
 import sys
 import pymongo
 
+# 设置页面配置
+st.set_page_config(
+    page_title="量化策略回测系统",
+    page_icon="📈",
+    layout="wide"
+)
+
 # 添加项目根目录到系统路径
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
+# Add custom CSS
+st.markdown(
+    """
+    <style>
+    .reportview-container {
+        background: #FFFACD; /* 浅黄色背景 */
+    }
+    .sidebar .sidebar-content {
+        background: #FFFFFF; /* 白色背景 */
+    }
+    .stButton>button {
+        color: #FFFFFF;
+        background-color: #FFD700; /* 金黄色按钮 */
+        border-radius: 5px;
+        border: none;
+        padding: 10px 20px;
+        font-size: 16px;
+    }
+    .stTitle {
+        color: #333333; /* 深灰色标题 */
+        font-weight: bold;
+    }
+    .stMarkdown h3 {
+        color: #FFD700; /* 金黄色小标题 */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 def main():
-    # 设置页面配置
-    st.set_page_config(
-        page_title="量化策略回测系统",
-        page_icon="📈",
-        layout="wide"
-    )
-    
     # 修改侧边栏页面名称
     st.sidebar.markdown(
         """

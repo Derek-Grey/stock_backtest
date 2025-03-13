@@ -126,8 +126,12 @@ def display_metrics(returns, turnover):
     
     # 计算关键指标
     total_return = (1 + returns).prod() - 1
-    annual_return = (1 + total_return) ** (252 / len(returns)) - 1
-    volatility = returns.std() * (252 ** 0.5)
+    # 根据数据频率调整年化系数
+    is_intraday = isinstance(returns.index[0], pd.Timestamp) and returns.index[0].hour != 0
+    annual_factor = 252 if not is_intraday else 252 * 240  # 日频使用252，分钟频使用252*240
+    
+    annual_return = (1 + total_return) ** (annual_factor / len(returns)) - 1
+    volatility = returns.std() * (annual_factor ** 0.5)
     sharpe = annual_return / volatility if volatility != 0 else 0
     max_drawdown = ((1 + returns).cumprod() / 
                     (1 + returns).cumprod().cummax() - 1).min()
@@ -147,71 +151,97 @@ def display_metrics(returns, turnover):
 
 def plot_cumulative_returns(returns):
     """绘制累计收益率和回撤图表"""
-    # 计算累计收益率
-    cumulative_returns = (1 + returns).cumprod() - 1
+    # 确保数据按时间排序
+    returns = returns.sort_index()
     
-    # 计算回撤
+    # 计算累计收益率和回撤
+    cumulative_returns = (1 + returns).cumprod() - 1
     rolling_max = (1 + returns).cumprod().cummax()
     drawdowns = (1 + returns).cumprod() / rolling_max - 1
     
-    # 创建两个子图
+    # 获取有效的时间点并格式化
+    valid_times = returns[returns.notna()].index
+    formatted_times = [t.strftime('%Y-%m-%d %H:%M:%S') if isinstance(t, pd.Timestamp) and t.hour != 0 
+                      else t.strftime('%Y-%m-%d') 
+                      for t in valid_times]
+    
+    # 创建图表
     fig = go.Figure()
+    
+    # 定义颜色
+    profit_color = '#1f77b4'  # 蓝色用于收益率
+    drawdown_color = '#ff7f0e'  # 橙色用于回撤
     
     # 添加累计收益率曲线
     fig.add_trace(go.Scatter(
-        x=cumulative_returns.index,
-        y=cumulative_returns.values,
+        x=formatted_times,
+        y=cumulative_returns[valid_times].values,
         mode='lines',
         name='累计收益率',
         yaxis='y1',
-        line=dict(color='#1f77b4', width=2)
+        line=dict(color=profit_color, width=3),
+        hovertemplate='%{x}<br>收益率: %{y:.2%}<extra></extra>'
     ))
     
-    # 添加回撤曲线
+    # 添加回撤曲线（使用填充区域）
     fig.add_trace(go.Scatter(
-        x=drawdowns.index,
-        y=drawdowns.values,
-        mode='lines',
+        x=formatted_times,
+        y=drawdowns[valid_times].values,
+        mode='none',
         name='回撤',
         yaxis='y2',
-        line=dict(color='#ff7f0e', width=2)
+        fill='tozeroy',
+        fillcolor='rgba(255, 127, 14, 0.3)',  # 半透明的橙色
+        hovertemplate='%{x}<br>回撤: %{y:.2%}<extra></extra>'
     ))
     
     # 更新布局
     fig.update_layout(
         title='策略表现',
-        plot_bgcolor='white',  # 设置绘图区背景色为白色
-        paper_bgcolor='white',  # 设置整个图表背景色为白色
+        plot_bgcolor='white',  # 设置为白色
+        paper_bgcolor='white',  # 设置为白色
         yaxis=dict(
             title='累计收益率',
-            title_font=dict(color="#1f77b4"),
-            tickfont=dict(color="#1f77b4"),
+            title_font=dict(color=profit_color),
+            tickfont=dict(color=profit_color),
             tickformat='.2%',
-            gridcolor='lightgrey',  # 设置网格线颜色
-            showgrid=True,  # 显示网格线
-            zeroline=True,  # 显示零线
-            zerolinecolor='lightgrey'  # 设置零线颜色
+            gridcolor='lightgrey',
+            showgrid=True,
+            zeroline=True,
+            zerolinecolor='lightgrey'
         ),
         yaxis2=dict(
             title='回撤',
-            title_font=dict(color="#ff7f0e"),
-            tickfont=dict(color="#ff7f0e"),
+            title_font=dict(color=drawdown_color),
+            tickfont=dict(color=drawdown_color),
             overlaying='y',
             side='right',
             tickformat='.2%',
             gridcolor='lightgrey',
-            showgrid=False  # 不显示第二个y轴的网格线
+            showgrid=False,
+            range=[min(drawdowns[valid_times].values) * 1.1, 0]
         ),
         xaxis=dict(
+            type='category',
             showgrid=True,
             gridcolor='lightgrey',
-            tickfont=dict(size=10)
+            tickfont=dict(size=10),
+            tickangle=45,
+            tickmode='array',
+            ticktext=formatted_times,
+            tickvals=formatted_times,
+            showticklabels=True  # 显示刻度标签
         ),
         legend=dict(
             yanchor="top",
             y=0.99,
             xanchor="left",
             x=0.01
+        ),
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=12,
+            font_family="Arial"
         )
     )
     

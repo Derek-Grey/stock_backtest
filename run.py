@@ -36,10 +36,10 @@ def main():
         f"--server.port={port}",
         "--server.address=0.0.0.0",
         "--browser.serverAddress=localhost",
-        "--theme.primaryColor=#FF4B4B",
-        "--theme.backgroundColor=#FFFFFF",
-        "--theme.secondaryBackgroundColor=#F0F2F6",
-        "--theme.textColor=#262730"
+        "--theme.primaryColor=#FFD700",  # 金黄色
+        "--theme.backgroundColor=#FFFACD",  # 浅黄色
+        "--theme.secondaryBackgroundColor=#FFFFFF",  # 白色
+        "--theme.textColor=#333333"  # 深灰色
     ]
 
     # 使用subprocess启动streamlit
