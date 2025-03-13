@@ -18,30 +18,34 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-# Add custom CSS
+# 添加自定义 CSS
 st.markdown(
     """
     <style>
     .reportview-container {
-        background: #FFFACD; /* 浅黄色背景 */
+        background: #F0FFF0; /* 浅绿色背景 */
     }
     .sidebar .sidebar-content {
         background: #FFFFFF; /* 白色背景 */
     }
     .stButton>button {
         color: #FFFFFF;
-        background-color: #FFD700; /* 金黄色按钮 */
+        background-color: #32CD32; /* 亮绿色按钮 */
         border-radius: 5px;
         border: none;
         padding: 10px 20px;
         font-size: 16px;
+        transition: background-color 0.3s ease; /* 添加过渡效果 */
+    }
+    .stButton>button:hover {
+        background-color: #3CB371; /* 鼠标悬停时的颜色 */
     }
     .stTitle {
         color: #333333; /* 深灰色标题 */
         font-weight: bold;
     }
     .stMarkdown h3 {
-        color: #FFD700; /* 金黄色小标题 */
+        color: #2E8B57; /* 深绿色小标题 */
     }
     </style>
     """,

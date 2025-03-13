@@ -76,12 +76,35 @@ def display_metrics(results, strategy_name):
 
 def render_backtest_page():
     """渲染回测页面"""
-    st.title("策略回测系统")
+    st.set_page_config(page_title="策略回测系统", layout="wide", initial_sidebar_state="collapsed")
+    st.markdown(
+        """
+        <style>
+        .main-title {
+            font-size: 2.5rem;
+            color: #1f77b4;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .sub-title {
+            font-size: 1.5rem;
+            color: #333333;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .icon {
+            margin-right: 10px;
+        }
+        </style>
+        """, unsafe_allow_html=True
+    )
+    st.markdown('<div class="main-title"><i class="fas fa-chart-line icon"></i>策略回测系统</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">欢迎使用策略回测系统，轻松分析您的投资策略表现</div>', unsafe_allow_html=True)
+
+    st.markdown('<h2><i class="fas fa-cogs icon"></i>回测参数设置</h2>', unsafe_allow_html=True)
     
-    with st.sidebar:
-        st.header("回测参数设置")
-        
-        # 日期选择
+    # 日期选择
+    with st.expander("选择日期范围", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input(
@@ -97,8 +120,9 @@ def render_backtest_page():
                 min_value=pd.to_datetime("2010-01-01"),
                 max_value=pd.to_datetime("2023-12-31")
             )
-        
-        # 持仓方式选择
+    
+    # 持仓方式选择
+    with st.expander("选择持仓方式", expanded=True):
         position_type = st.radio(
             "持仓方式",
             ["固定数量", "动态百分比"],
@@ -114,13 +138,14 @@ def render_backtest_page():
             start_percentage = st.number_input("起始百分比", min_value=0.0, max_value=1.0, value=0.01, format="%.3f")
             end_percentage = st.number_input("结束百分比", min_value=0.0, max_value=1.0, value=0.03, format="%.3f")
             rebalance_frequency = st.number_input("再平衡频率(天)", min_value=1, max_value=30, value=1)
-        
-        # 策略选择
+    
+    # 策略选择
+    with st.expander("选择策略", expanded=True):
         run_fixed = st.checkbox("运行固定持仓策略", value=True)
         run_dynamic = st.checkbox("运行动态持仓策略", value=True)
-        
-        # 运行按钮
-        run_button = st.button("开始回测")
+    
+    # 运行按钮
+    run_button = st.button("开始回测", help="点击以开始策略回测")
 
     # 主界面
     if run_button:
