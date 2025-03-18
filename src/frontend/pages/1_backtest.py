@@ -191,6 +191,9 @@ def render_backtest_page():
                     params['start_percentage'] = start_percentage 
                     params['end_percentage'] = end_percentage
                 
+                # 记录回测参数
+                logger.info(f"开始回测，参数: {params}")
+                
                 fixed_results, dynamic_results = main(**params)
                 
                 # Define timestamp before using it

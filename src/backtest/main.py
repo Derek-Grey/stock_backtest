@@ -128,7 +128,7 @@ def save_results(results, strategy_name, output_directory):
         results.to_csv(output_path)
         logger.info(f"{strategy_name}结果已保存到 {output_path}")
 
-def main(start_date="2010-08-02", end_date="2020-07-31", 
+def main(start_date, end_date, 
          hold_count=50, rebalance_frequency=1,
          run_fixed=True, run_dynamic=True,
          position_type="固定数量",  # 新增参数
@@ -214,8 +214,8 @@ if __name__ == "__main__":
     
     # 设置回测参数
     params = {
-        'start_date': "2015-01-05",
-        'end_date': "2023-12-29",
+        'start_date': "2015-01-05",  # 这里设置开始日期
+        'end_date': "2023-12-29",    # 这里设置结束日期
         'hold_count': 50,
         'rebalance_frequency': 1,
         'run_fixed': True,
@@ -227,7 +227,7 @@ if __name__ == "__main__":
     
     # 执行回测
     try:
-        fixed_results, dynamic_results = main(**params)
+        fixed_results, dynamic_results = main(**params)  # 通过解包字典传递参数
         
         # 输出回测结果摘要
         if fixed_results is not None:

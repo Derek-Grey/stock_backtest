@@ -13,12 +13,12 @@ from functools import wraps
 from src.data.db_client import get_client_U, get_client
 from src.utils.decorators import cache_data
 from src.utils.helpers import trans_str_to_float64
-from config.settings import USELESS_INDUS, END_MONTH
+from config.settings import USELESS_INDUS, END_MONTH, DATA_DIR
 
 class LoadData:
     """数据加载类"""
     
-    def __init__(self, date_s: str, date_e: str, data_folder: str):
+    def __init__(self, date_s: str, date_e: str, data_folder: str = DATA_DIR):
         """
         初始化数据加载器
         
@@ -38,9 +38,14 @@ class LoadData:
 
     def _validate_date_range(self, df):
         """验证数据日期范围是否满足要求"""
+        if df.empty:
+            return False
+        
         dates = pd.to_datetime(df.index)
         start = pd.to_datetime(self.date_s)
         end = pd.to_datetime(self.date_e)
+        
+        # 检查请求的日期范围是否在可用数据范围内
         return dates.min() <= start and dates.max() >= end
 
     def get_chg_wind(self) -> pd.DataFrame:
@@ -51,9 +56,15 @@ class LoadData:
         if matrix_path.exists():
             try:
                 df = pd.read_pickle(matrix_path)
+                # 如果请求的时间范围在可用数据范围内，则截取所需部分
                 if self._validate_date_range(df):
                     logger.debug(f"从本地文件 {matrix_path} 加载涨跌幅矩阵")
-                    return df
+                    # 截取请求的时间范围
+                    start_date = pd.to_datetime(self.date_s)
+                    end_date = pd.to_datetime(self.date_e)
+                    return df.loc[start_date:end_date]
+                else:
+                    logger.debug(f"本地文件不满足时间范围要求，将从数据库重新加载")
             except Exception as e:
                 logger.error(f'读取矩阵文件失败: {e}')
 
@@ -74,76 +85,23 @@ class LoadData:
         matrix.to_pickle(matrix_path)
         return matrix
 
-    def get_stocks_info(self) -> tuple:
-        """获取股票信息矩阵"""
-        matrix_paths = {
-            'trade_status': Path(self.data_folder) / 'trade_status_matrix.pkl',
-            'riskwarning': Path(self.data_folder) / 'riskwarning_matrix.pkl',
-            'limit': Path(self.data_folder) / 'limit_matrix.pkl'
-        }
-        
-        # 检查所有矩阵文件是否存在且有效
-        matrices = {}
-        all_valid = True
-        for name, path in matrix_paths.items():
-            if path.exists():
-                try:
-                    matrix = pd.read_pickle(path)
-                    if self._validate_date_range(matrix):
-                        matrices[name] = matrix
-                    else:
-                        all_valid = False
-                        break
-                except Exception as e:
-                    logger.error(f'读取{name}矩阵文件失败: {e}')
-                    all_valid = False
-                    break
-            else:
-                all_valid = False
-                break
-
-        if all_valid:
-            logger.debug("从本地文件加载所有矩阵数据")
-            df_stocks = self.get_chg_wind()
-            return (df_stocks, matrices['trade_status'], 
-                   matrices['riskwarning'], matrices['limit'])
-
-        # 从数据库加载数据
-        logger.debug('从数据库加载股票信息...')
-        # 获取基本信息
-        df_info = pd.DataFrame(
-            self.client_U.basic_wind.w_basic_info.find(
-                {"date": {"$gte": self.date_s, "$lte": self.date_e}},
-                {"_id": 0, 'date': 1, 'code': 1, 'riskwarning': 1, 'trade_status': 1},
-                batch_size=1000000
-            )
-        )
-        df_info['date'] = pd.to_datetime(df_info['date'])
-        
-        # 获取涨跌停信息
-        df_limit = pd.DataFrame(
-            self.client_U.basic_jq.jq_daily_price_none.find(
-                {"date": {"$gte": self.date_s, "$lte": self.date_e}},
-                {"_id": 0, "date": 1, "code": 1, "close": 1, "high_limit": 1, "low_limit": 1},
-                batch_size=1000000
-            )
-        )
-        df_limit['date'] = pd.to_datetime(df_limit['date'])
-        df_limit['limit'] = df_limit.apply(
-            lambda x: x["close"] == x["high_limit"] or x["close"] == x["low_limit"],
-            axis=1
-        ).astype('int')
-        
-        # 创建并保存矩阵
-        trade_status_matrix = df_info.pivot(index='date', columns='code', values='trade_status')
-        riskwarning_matrix = df_info.pivot(index='date', columns='code', values='riskwarning')
-        limit_matrix = df_limit.pivot(index='date', columns='code', values='limit')
-        
-        trade_status_matrix.to_pickle(matrix_paths['trade_status'])
-        riskwarning_matrix.to_pickle(matrix_paths['riskwarning'])
-        limit_matrix.to_pickle(matrix_paths['limit'])
-        
+    def get_stocks_info(self):
+        """获取股票基础信息"""
+        # 获取股票数据
         df_stocks = self.get_chg_wind()
+        
+        # 记录可用数据范围
+        available_dates = df_stocks.index
+        if not available_dates.empty:
+            available_start = available_dates.min().strftime('%Y-%m-%d')
+            available_end = available_dates.max().strftime('%Y-%m-%d')
+            logger.info(f"使用数据范围: {available_start} 至 {available_end}")
+        
+        # 获取其他矩阵
+        trade_status_matrix = self._get_trade_status_matrix()
+        riskwarning_matrix = self._get_risk_warning_matrix()
+        limit_matrix = self._get_limit_matrix()
+        
         return df_stocks, trade_status_matrix, riskwarning_matrix, limit_matrix
 
     def generate_score_matrix(self, file_name: str) -> pd.DataFrame:
@@ -264,3 +222,115 @@ class LoadData:
         df_m_day_count.sort_index(inplace=True)
         
         return df_m_day_count
+
+    def _get_trade_status_matrix(self):
+        """获取交易状态矩阵"""
+        matrix_path = Path(self.data_folder) / 'trade_status_matrix.pkl'
+        
+        # 如果本地文件存在,尝试加载
+        if matrix_path.exists():
+            try:
+                matrix = pd.read_pickle(matrix_path)
+                # 如果请求的时间范围在可用数据范围内，则截取所需部分
+                if self._validate_date_range(matrix):
+                    logger.debug(f"从本地文件 {matrix_path} 加载交易状态矩阵")
+                    # 截取请求的时间范围
+                    start_date = pd.to_datetime(self.date_s)
+                    end_date = pd.to_datetime(self.date_e)
+                    return matrix.loc[start_date:end_date]
+                else:
+                    logger.debug(f"本地交易状态矩阵不满足时间范围要求，将从数据库重新加载")
+            except Exception as e:
+                logger.error(f'读取交易状态矩阵文件失败: {e}')
+        
+        # 从数据库加载并处理数据
+        logger.debug('从数据库加载交易状态数据...')
+        df_info = pd.DataFrame(
+            self.client_U.basic_wind.w_basic_info.find(
+                {"date": {"$gte": self.date_s, "$lte": self.date_e}},
+                {"_id": 0, "date": 1, "code": 1, "trade_status": 1},
+                batch_size=1000000
+            )
+        )
+        df_info['date'] = pd.to_datetime(df_info['date'])
+        
+        # 转换为矩阵并保存
+        matrix = df_info.pivot(index='date', columns='code', values='trade_status')
+        matrix.to_pickle(matrix_path)
+        return matrix
+
+    def _get_risk_warning_matrix(self):
+        """获取风险警告矩阵"""
+        matrix_path = Path(self.data_folder) / 'riskwarning_matrix.pkl'
+        
+        # 如果本地文件存在,尝试加载
+        if matrix_path.exists():
+            try:
+                matrix = pd.read_pickle(matrix_path)
+                # 如果请求的时间范围在可用数据范围内，则截取所需部分
+                if self._validate_date_range(matrix):
+                    logger.debug(f"从本地文件 {matrix_path} 加载风险警告矩阵")
+                    # 截取请求的时间范围
+                    start_date = pd.to_datetime(self.date_s)
+                    end_date = pd.to_datetime(self.date_e)
+                    return matrix.loc[start_date:end_date]
+                else:
+                    logger.debug(f"本地风险警告矩阵不满足时间范围要求，将从数据库重新加载")
+            except Exception as e:
+                logger.error(f'读取风险警告矩阵文件失败: {e}')
+        
+        # 从数据库加载并处理数据
+        logger.debug('从数据库加载风险警告数据...')
+        df_info = pd.DataFrame(
+            self.client_U.basic_wind.w_basic_info.find(
+                {"date": {"$gte": self.date_s, "$lte": self.date_e}},
+                {"_id": 0, "date": 1, "code": 1, "riskwarning": 1},
+                batch_size=1000000
+            )
+        )
+        df_info['date'] = pd.to_datetime(df_info['date'])
+        
+        # 转换为矩阵并保存
+        matrix = df_info.pivot(index='date', columns='code', values='riskwarning')
+        matrix.to_pickle(matrix_path)
+        return matrix
+
+    def _get_limit_matrix(self):
+        """获取涨跌停限制矩阵"""
+        matrix_path = Path(self.data_folder) / 'limit_matrix.pkl'
+        
+        # 如果本地文件存在,尝试加载
+        if matrix_path.exists():
+            try:
+                matrix = pd.read_pickle(matrix_path)
+                # 如果请求的时间范围在可用数据范围内，则截取所需部分
+                if self._validate_date_range(matrix):
+                    logger.debug(f"从本地文件 {matrix_path} 加载涨跌停限制矩阵")
+                    # 截取请求的时间范围
+                    start_date = pd.to_datetime(self.date_s)
+                    end_date = pd.to_datetime(self.date_e)
+                    return matrix.loc[start_date:end_date]
+                else:
+                    logger.debug(f"本地涨跌停限制矩阵不满足时间范围要求，将从数据库重新加载")
+            except Exception as e:
+                logger.error(f'读取涨跌停限制矩阵文件失败: {e}')
+        
+        # 从数据库加载并处理数据
+        logger.debug('从数据库加载涨跌停限制数据...')
+        df_limit = pd.DataFrame(
+            self.client_U.basic_jq.jq_daily_price_none.find(
+                {"date": {"$gte": self.date_s, "$lte": self.date_e}},
+                {"_id": 0, "date": 1, "code": 1, "close": 1, "high_limit": 1, "low_limit": 1},
+                batch_size=1000000
+            )
+        )
+        df_limit['date'] = pd.to_datetime(df_limit['date'])
+        df_limit['limit'] = df_limit.apply(
+            lambda x: x["close"] == x["high_limit"] or x["close"] == x["low_limit"],
+            axis=1
+        ).astype('int')
+        
+        # 转换为矩阵并保存
+        matrix = df_limit.pivot(index='date', columns='code', values='limit')
+        matrix.to_pickle(matrix_path)
+        return matrix

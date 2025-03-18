@@ -30,7 +30,14 @@ def get_client_U(m='r'):
     user, pwd = auth_config.get(m, ('Tom', 'tom'))
     if m not in auth_config:
         logger.warning(f'Invalid auth type {m}, using read-only access')
-        
-    return pymongo.MongoClient(
-        f"mongodb://{quote_plus(user)}:{quote_plus(pwd)}@192.168.1.99:29900/"
-    ) 
+    
+    try:
+        client = pymongo.MongoClient(
+            f"mongodb://{quote_plus(user)}:{quote_plus(pwd)}@192.168.1.99:29900/"
+        )
+        # 尝试执行一个简单的操作来检查连接
+        client.admin.command('ping')
+        return client
+    except pymongo.errors.ConnectionFailure as e:
+        logger.error(f"Connection failed: {e}. Falling back to local database.")
+        return pymongo.MongoClient("mongodb://localhost:27017/")
